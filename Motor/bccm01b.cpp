@@ -20,3 +20,11 @@ int Bccm01b::controlSpeed (int value) {
 		return 0;
 	}
 }
+
+int Bccm01b::reportSpeed () {
+	return _value;
+}
+
+int Bccm01b::getPin () {
+	return _pin
+}

@@ -13,6 +13,8 @@ class Bccm01b {
 	public:
 		Bccm01b (int pin); //Constructor
 		int controlSpeed (int value); //Setter speed
+		int reportSpeed (); //Getter speed
+		int getPin(); //Getter pin
 	private:
 		int _pin;
 		int _value; //Speed
