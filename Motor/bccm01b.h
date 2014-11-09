@@ -11,8 +11,8 @@ Created by Njord team, November 3, 2014.
 //Class representing one motor
 class Bccm01b {
 	public:
-		Bccm01b (int pin); //Constructor
-		int controlSpeed (int value); //Setter speed
+		Bccm01b ( int pin ); //Constructor
+		int controlSpeed ( int value ); //Setter speed
 		int reportSpeed (); //Getter speed
 		int getPin(); //Getter pin
 	private:

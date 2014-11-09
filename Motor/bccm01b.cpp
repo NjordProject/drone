@@ -1,5 +1,5 @@
 /*
-Bccm01b.h - Library for controlling motor.
+Bccm01b.cpp - Library for controlling motor.
 Created by Njord team, November 3, 2014.
 */
 
@@ -13,7 +13,7 @@ Bccm01b::Bccm01b (int pin) {
 
 int Bccm01b::controlSpeed (int value) {
 	if (value < 0 || value > 255) {
-		return 1;
+		return 1; //Report a value error
 	} else {
 		_value = value;
 		analogWrite (_pin, _value);
