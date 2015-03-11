@@ -6,7 +6,7 @@ Created by Njord team, November 3, 2014.
 #ifndef Bccm01b_h
 #define Bccm01b_h
 
-//#include "Arduino.h"
+#include "Arduino.h"
 #include <stdint.h>
 
 //Class representing one motor
