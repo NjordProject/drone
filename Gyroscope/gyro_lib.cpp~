@@ -1,0 +1,197 @@
+#include "Wire.h"
+
+#include "gyro_lib.h"
+
+// I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
+// for both classes must be in the include path of your project
+#include "I2Cdev.h"
+
+#include "MPU6050_6Axis_MotionApps20.h"
+
+#include "MPU6050.h" // not necessary if using MotionApps include file
+
+#include "I2Cdev.h"
+#include <math.h>
+
+#define LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
+// class default I2C address is 0x68
+// specific I2C addresses may be passed as a parameter here
+// AD0 low = 0x68 (default for SparkFun breakout and InvenSense evaluation board)
+// AD0 high = 0x69
+MPU6050 mpu;
+// packet structure for InvenSense teapot demo
+uint8_t teapotPacket[14] = { '$', 0x02, 0,0, 0,0, 0,0, 0,0, 0x00, 0x00, '\r', '\n' };
+
+
+
+bool blinkState = false;
+
+// MPU control/status vars
+bool dmpReady = false;  // set true if DMP init was successful
+uint8_t mpuIntStatus;   // holds actual interrupt status byte from MPU
+uint8_t devStatus;      // return status after each device operation (0 = success, !0 = error)
+uint16_t packetSize;    // expected DMP packet size (default is 42 bytes)
+uint16_t fifoCount;     // count of all bytes currently in FIFO
+uint8_t fifoBuffer[64]; // FIFO storage buffer
+
+// orientation/motion vars
+Quaternion q;           // [w, x, y, z]         quaternion container
+VectorInt16 aa;         // [x, y, z]            accel sensor measurements
+VectorInt16 aaReal;     // [x, y, z]            gravity-free accel sensor measurements
+VectorInt16 aaWorld;    // [x, y, z]            world-frame accel sensor measurements
+VectorFloat gravity;    // [x, y, z]            gravity vector
+float euler[3];         // [psi, theta, phi]    Euler angle container
+float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
+float YawPitchOffSet; 
+
+
+
+
+
+volatile bool mpuInterrupt = false;     // indicates whether MPU interrupt pin has gone high
+void dmpDataReady() {
+    mpuInterrupt = true;
+}
+
+// ================================================================
+// ===                      INITIAL SETUP                       ===
+// ================================================================
+
+
+int Gyro::initialise(){
+    Wire.begin();
+    Serial.begin(115200);
+    while (!Serial); 
+    mpu.initialize();
+    devStatus = mpu.dmpInitialize();
+    
+    // make sure it worked (returns 0 if so)
+    if (devStatus == 0) {
+     
+        mpu.setDMPEnabled(true);
+        attachInterrupt(0, dmpDataReady, RISING);
+        mpuIntStatus = mpu.getIntStatus();
+        dmpReady = true;
+        packetSize = mpu.dmpGetFIFOPacketSize();
+    } else {
+      return 0;
+        // ERROR!
+        // 1 = initial memory load failed
+        // 2 = DMP configuration updates failed
+        // (if it's going to break, usually the code will be 1)
+        Serial.print(F("DMP Initialization failed (code "));
+        Serial.print(devStatus);
+        Serial.println(F(")"));
+    }
+    
+    // display Euler angles in degrees
+    mpu.dmpGetQuaternion(&q, fifoBuffer);
+    mpu.dmpGetGravity(&gravity, &q);
+    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+               
+    // display real acceleration, adjusted to remove gravity
+    mpu.dmpGetQuaternion(&q, fifoBuffer);
+    mpu.dmpGetAccel(&aa, fifoBuffer);
+    mpu.dmpGetGravity(&gravity, &q);
+    mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
+    // configure LED for output
+   // pinMode(LED_PIN, OUTPUT);
+return 1;
+}
+
+
+
+
+
+/*
+*
+* About Gyro::fct_loop()
+* Renvoie une table qui renseigne sur l'etat du drone : 
+*
+  valeur [0] = moteur en +X
+  valeur [1] = moteur en -X 
+  valeur [2] = moteur en +Y 
+  valeur [3] = moteur en -Y 
+  valeur [4] = flag qui indique s'il y a des modif. a faire (pr eviter de faire des boucles)
+*
+*
+*/ 
+  
+  
+int* Gyro::fct_loop(){
+   static int moteur[] = {0,0,0,0,0};
+   
+   
+   
+   // Si moteur[4] = 0 lors du renvoie de la donnée, alors, ca veur dire que le drone ne doit pas engager d'action de stabilisation. 
+   moteur[4] = 0;
+   // if programming failed, don't try to do anything
+   if (!dmpReady) {return moteur;};
+
+   // wait for MPU interrupt or extra packet(s) available
+   while (!mpuInterrupt && fifoCount < packetSize) {
+   }
+
+   // reset interrupt flag and get INT_STATUS byte
+   mpuInterrupt = false;
+   mpuIntStatus = mpu.getIntStatus();
+
+   // get current FIFO count
+   fifoCount = mpu.getFIFOCount();
+
+   // check for overflow (this should never happen unless our code is too inefficient)
+   if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+       // reset so we can continue cleanly
+       mpu.resetFIFO();
+       Serial.println(F("FIFO overflow!"));
+
+   // otherwise, check for DMP data ready interrupt (this should happen frequently)
+   } else if (mpuIntStatus & 0x02) {
+       // wait for correct available data length, should be a VERY short wait
+       while (fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+       // read a packet from FIFO
+       mpu.getFIFOBytes(fifoBuffer, packetSize);
+        
+       // track FIFO count here in case there is > 1 packet available
+       // (this lets us immediately read more without waiting for an interrupt)
+       fifoCount -= packetSize;
+
+       // display Euler angles in degrees
+       mpu.dmpGetQuaternion(&q, fifoBuffer);
+       mpu.dmpGetGravity(&gravity, &q);
+       mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+      
+      
+  
+       // traitement des moteurs selon l'axe x. 
+       if(ypr[1]*18/M_PI*ypr[1]*90/M_PI>2){
+         // Action sur moteur en +X
+         moteur[0] = floor(ypr[1]*18/M_PI*ypr[1]*90/M_PI);   // = E(angle² /20) 
+         moteur[1] = -floor(ypr[1]*18/M_PI*ypr[1]*90/M_PI);   //  =-E(angle² /20)  => donne action opposé sur le moteur qui est trop haut => baisse la puissance du moteur. 
+         moteur[4] = 1;          
+       } 
+       // action sur moteur en -X    
+       else if (ypr[1]*18/M_PI*ypr[1]*90/M_PI<-2){
+         moteur[0] = -floor(ypr[1]*18/M_PI*ypr[1]*90/M_PI);  
+         moteur[1] = floor(ypr[1]*18/M_PI*ypr[1]*90/M_PI);  
+         moteur[4] = 1;  
+       }
+        
+       // Traitement des moteurs selon l'axe X 
+       if(ypr[2]*18/M_PI*ypr[2]*90/M_PI>2){
+         // Action sur moteur en +y
+         moteur[2] = floor(ypr[2]*18/M_PI*ypr[2]*90/M_PI);   // = E(angle² /10) 
+         moteur[3] = -floor(ypr[2]*18/M_PI*ypr[2]*90/M_PI);  // =-E(angle² /20)  => donne action opposé sur le moteur qui est trop haut => baisse la puissance du moteur. 
+         moteur[4] = 1;  
+       }      // Action sur moteur en -Y
+       else if (ypr[2]*18/M_PI*ypr[2]*90/M_PI<-2){
+         moteur[2] = -floor(ypr[2]*18/M_PI*ypr[2]*90/M_PI);             
+         moteur[3] = floor(ypr[2]*18/M_PI*ypr[2]*90/M_PI);  
+         moteur[4] = 1;  
+       }
+   }
+return moteur;
+
+}
+
+
