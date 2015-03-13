@@ -20,6 +20,7 @@ bool Communication::sendMsg(uint8_t* data, uint8_t len, uint8_t channel) {
   if(!_nrf24.send(data, len))
     state = false;
   _nrf24.waitPacketSent();
+  return state;
 }
 
 bool Communication::receiveMsg(uint8_t* data, uint8_t len, uint8_t channel) {
